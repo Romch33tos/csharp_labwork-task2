@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
@@ -11,6 +11,10 @@ namespace SportsCompetitionApp
     private readonly IMainView view;
     private readonly AthleteRepository repository;
     private readonly Random random;
+    private bool dataLoaded = false;
+
+    private const int MIN_YEAR = 1970;
+    private const int MAX_YEAR = 2006;
 
     public MainPresenter(IMainView mainView)
     {
@@ -18,22 +22,52 @@ namespace SportsCompetitionApp
       repository = new AthleteRepository();
       random = new Random();
 
-      // Подписка на события представления
       view.GenerateDataClicked += OnGenerateDataClicked;
       view.LoadDataClicked += OnLoadDataClicked;
       view.FilterByYearClicked += OnFilterByYearClicked;
       view.FindBestAthleteClicked += OnFindBestAthleteClicked;
+      view.BrowseFileClicked += OnBrowseFileClicked;
+    }
+
+    private void OnBrowseFileClicked(object sender, EventArgs e)
+    {
+      try
+      {
+        string filePath = view.ShowOpenFileDialog();
+        if (!string.IsNullOrEmpty(filePath))
+        {
+          view.FilePath = filePath;
+        }
+      }
+      catch (Exception ex)
+      {
+        view.ShowMessage($"Ошибка при выборе файла: {ex.Message}");
+      }
     }
 
     private void OnGenerateDataClicked(object sender, EventArgs e)
     {
       try
       {
+        if (dataLoaded)
+        {
+          view.ShowMessage("Данные уже были сгенерированы или загружены");
+          return;
+        }
+
+        string filePath = view.ShowSaveFileDialog();
+        if (string.IsNullOrEmpty(filePath))
+        {
+          return;
+        }
+
         GenerateSampleData();
-        string filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "athletes.json");
         SaveDataToJson(filePath);
         view.FilePath = filePath;
         view.DisplayAllAthletes(repository.GetAllAthletes());
+        view.DisableGenerateButton();
+        view.EnableFilterButtons(true);
+        dataLoaded = true;
         view.ShowMessage($"Данные сгенерированы и сохранены в файл: {filePath}");
       }
       catch (Exception ex)
@@ -46,6 +80,12 @@ namespace SportsCompetitionApp
     {
       try
       {
+        if (dataLoaded)
+        {
+          view.ShowMessage("Данные уже были загружены или сгенерированы");
+          return;
+        }
+
         if (string.IsNullOrEmpty(view.FilePath))
         {
           view.ShowMessage("Укажите путь к файлу");
@@ -54,6 +94,8 @@ namespace SportsCompetitionApp
 
         LoadDataFromJson(view.FilePath);
         view.DisplayAllAthletes(repository.GetAllAthletes());
+        view.EnableFilterButtons(true); 
+        dataLoaded = true;
         view.ShowMessage($"Данные загружены из файла: {view.FilePath}");
       }
       catch (Exception ex)
@@ -66,19 +108,29 @@ namespace SportsCompetitionApp
     {
       try
       {
-        int year = view.FilterYear;
-        if (year == 0)
+        if (!dataLoaded)
         {
-          view.ShowMessage("Введите корректный год рождения");
+          view.ShowMessage("Сначала загрузите или сгенерируйте данные");
+          return;
+        }
+
+        int year = view.FilterYear;
+        if (year < MIN_YEAR || year > MAX_YEAR)
+        {
+          view.ShowMessage($"Год должен быть в диапазоне {MIN_YEAR}-{MAX_YEAR}");
           return;
         }
 
         var filteredAthletes = repository.GetAthletesByBirthYear(year);
-        view.DisplayFilteredAthletes(filteredAthletes);
 
         if (filteredAthletes.Count == 0)
-        {
+        {   
           view.ShowMessage($"Спортсмены, родившиеся в {year} году, не найдены");
+          view.DisplayAllAthletes(repository.GetAllAthletes());
+        }
+        else
+        {
+          view.DisplayFilteredAthletes(filteredAthletes);
         }
       }
       catch (Exception ex)
@@ -91,10 +143,16 @@ namespace SportsCompetitionApp
     {
       try
       {
-        int year = view.FilterYear;
-        if (year == 0)
+        if (!dataLoaded)
         {
-          view.ShowMessage("Введите корректный год рождения");
+          view.ShowMessage("Сначала загрузите или сгенерируйте данные");
+          return;
+        }
+
+        int year = view.FilterYear;
+        if (year < MIN_YEAR || year > MAX_YEAR)
+        {
+          view.ShowMessage($"Год должен быть в диапазоне {MIN_YEAR}-{MAX_YEAR}");
           return;
         }
 
@@ -104,6 +162,12 @@ namespace SportsCompetitionApp
         if (bestAthlete == null)
         {
           view.ShowMessage($"Спортсмены, родившиеся в {year} году, не найдены");
+          view.DisplayAllAthletes(repository.GetAllAthletes());
+        }
+        else
+        {
+          var athletesByYear = repository.GetAthletesByBirthYear(year);
+          view.DisplayFilteredAthletes(athletesByYear);
         }
       }
       catch (Exception ex)
@@ -117,12 +181,11 @@ namespace SportsCompetitionApp
       repository.Clear();
 
       string[] lastNames = { "Иванов", "Петров", "Сидоров", "Кузнецов", "Смирнов", "Попов", "Васильев", "Павлов" };
-      int[] birthYears = { 1990, 1991, 1992, 1993, 1994, 1995 };
 
       foreach (var lastName in lastNames)
       {
-        int birthYear = birthYears[random.Next(birthYears.Length)];
-        double jumpResult = Math.Round(5.0 + random.NextDouble() * 3.0, 2); // Результат от 5.0 до 8.0 метров
+        int birthYear = random.Next(MIN_YEAR, MAX_YEAR + 1);
+        double jumpResult = Math.Round(5.0 + random.NextDouble() * 3.0, 2);
         repository.AddAthlete(new Athlete(lastName, birthYear, jumpResult));
       }
     }
